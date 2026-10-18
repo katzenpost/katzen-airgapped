@@ -391,7 +391,11 @@ pub fn run_interactive_tui() -> Result<(), String> {
     println!("================================================================================");
     println!("     KATZENPOST SOVEREIGN VAULT — SOVRANITÀ AIR-GAPPED & PIGEONHOLE           ");
     println!("================================================================================");
+    println!("Username Sovrano      : {}", mailbox.identity.username);
     println!("Identità Vault Box ID : {}", mailbox.identity.box_id_hex);
+    println!("Avatar Identicon (Crittografico deterministico):");
+    println!("{}", mailbox.identity.identicon().render_terminal());
+    println!("--------------------------------------------------------------------------------");
     println!("Metafora Quantistica   : Il Gatto di Schrödinger");
     println!("                       -> Finché il pacchetto transita nel mixnet o risiede nel");
     println!("                          Vault air-gapped, il suo stato resta in sovrapposizione.");

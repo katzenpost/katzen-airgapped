@@ -57,14 +57,30 @@ The virtual keyboard is **optional**, designed to defend high-risk workstations 
   - **Quantum Shielding (Virtual Keyboard)**: `5/5 ⭐⭐⭐⭐⭐ (100%)` — Full isolation from keyboard sniffing vectors.
   - **Calm, Non-Alarmist UI**: Zero panic banners or flashing red lights; clear, actionable OPSEC guidance only.
 
+### Permanent Cryptographic Identity & Identicon System
+Katzenpost clients maintain permanent sovereign cryptographic identities (Ed25519/X25519 Box IDs). For instant visual Short Authentication String (SAS) verification without reading 64 hex characters, every local profile and recipient contact generates a unique, bilateral symmetric **Identicon**:
+```bash
+# Show your permanent profile and ANSI colored terminal identicon:
+katzen vault profile show
+
+# Add a recipient contact profile (automatically generates their unique identicon):
+katzen vault profile add --username bob --recipient 3c9b74...32byteshex...
+
+# List all contacts and view their visual avatar identicons:
+katzen vault profile list
+
+# Export a vector SVG identicon:
+katzen vault profile export-svg --username bob --recipient 3c9b... --output bob-avatar.svg
+```
+
 ### Sovereign Pigeonhole Mailbox (Katzenpost BACAP)
 Manage asynchronous mailboxes offline:
 ```bash
-# Display your local sovereign Box ID identity:
+# Display your local sovereign Box ID identity and visual identicon avatar:
 katzen vault mailbox identity
 
 # Compose a message draft (with optional anti-keylogger virtual keyboard):
-katzen vault mailbox deposit --recipient <32-byte-hex-box-id> --virtual-keyboard
+katzen vault mailbox deposit --recipient bob --virtual-keyboard
 
 # List stored inbound and outbound messages:
 katzen vault mailbox list

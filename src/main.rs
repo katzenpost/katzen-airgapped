@@ -1,4 +1,5 @@
 use clap::{Parser, Subcommand};
+use katzen_airgapped::identicon::Identicon;
 use katzen_airgapped::pigeonhole::{
     default_vault_mailbox_path, BoxIdentity, ReplicaRead, ReplicaReadReply, ReplicaWrite, VaultMailbox,
 };
@@ -139,8 +140,43 @@ enum VaultCommands {
         payload: String,
     },
 
+    /// Manage permanent cryptographic profiles and recipient contact identicons
+    Profile {
+        #[command(subcommand)]
+        action: ProfileCommands,
+    },
+
     /// Inspect current offline PKI consensus directory topology
     ShowTopology,
+}
+
+#[derive(Subcommand)]
+enum ProfileCommands {
+    /// Show local operator profile and deterministic ANSI identicon
+    Show,
+    /// Add or update a recipient contact profile and generate their unique identicon
+    Add {
+        /// Human-readable username or alias for the recipient
+        #[arg(short, long)]
+        username: String,
+        /// Recipient permanent Box ID (32-byte hex public key)
+        #[arg(short, long)]
+        recipient: String,
+    },
+    /// List all saved contact profiles and their visual identicons
+    List,
+    /// Export an SVG identicon for a given username and public key
+    ExportSvg {
+        /// Username
+        #[arg(short, long)]
+        username: String,
+        /// Recipient or public key hex
+        #[arg(short, long)]
+        recipient: String,
+        /// Output file path (e.g. identicon.svg)
+        #[arg(short, long)]
+        output: PathBuf,
+    },
 }
 
 #[derive(Subcommand)]
@@ -389,13 +425,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 MailboxCommands::Identity => {
                     let mbox_path = default_vault_mailbox_path();
                     let mbox = VaultMailbox::new_or_load(&mbox_path)?;
+                    let identicon = mbox.identity.identicon();
                     println!("=======================================================");
-                    println!(" KATZENPOST PIGEONHOLE SOVEREIGN IDENTITY              ");
+                    println!(" KATZENPOST PIGEONHOLE SOVEREIGN IDENTITY & AVATAR     ");
                     println!("=======================================================");
+                    println!("Username:                    {}", mbox.identity.username);
                     println!("Box ID (Indirizzo Pubblico): {}", mbox.identity.box_id_hex);
                     println!("Creato il (Unix Epoch):      {}", mbox.identity.created_at);
                     println!("File Archivio Locale:        {}", mbox_path.display());
-                    println!("Suggerimento: Condividi il tuo Box ID con i tuoi contatti per ricevere messaggi asincroni.");
+                    println!("\nIdenticon Profilo (Avatar deterministico crittografico):");
+                    println!("{}", identicon.render_terminal());
                     println!("=======================================================");
                 }
 
@@ -404,13 +443,32 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     let mut mbox = VaultMailbox::new_or_load(&mbox_path)?;
                     let mut kbd = VirtualKeyboardState::new();
 
-                    let recip_hex = recipient.unwrap_or_else(|| {
-                        print!("Inserisci il Box ID (32-byte hex) del destinatario: ");
+                    let raw_target = recipient.unwrap_or_else(|| {
+                        print!("Inserisci il Box ID o lo username del destinatario: ");
                         io::stdout().flush().unwrap();
                         let mut input = String::new();
                         io::stdin().read_line(&mut input).unwrap();
                         input.trim().to_string()
                     });
+
+                    // Resolve contact or raw hex
+                    let (recip_hex, contact_opt) = {
+                        let trimmed = raw_target.trim();
+                        if let Some(c) = mbox.find_contact(trimmed).or_else(|| mbox.contacts.iter().find(|c| c.username.eq_ignore_ascii_case(trimmed))) {
+                            (c.box_id_hex.clone(), Some(c.clone()))
+                        } else {
+                            (trimmed.to_string(), None)
+                        }
+                    };
+
+                    if let Some(ref c) = contact_opt {
+                        println!("\n[✓] Contatto verificato in rubrica: {}", c.username);
+                        println!("{}", c.identicon().render_terminal());
+                    } else {
+                        let temp_identicon = Identicon::new("recipient", &recip_hex);
+                        println!("\n[i] Identicon generato per il destinatario:");
+                        println!("{}", temp_identicon.render_terminal());
+                    }
 
                     let use_virtual = if virtual_keyboard {
                         true
@@ -499,6 +557,66 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     println!("[*] Testo decifrato:");
                     println!("{}", plaintext);
                     println!("=======================================================");
+                }
+            },
+
+            VaultCommands::Profile { action } => match action {
+                ProfileCommands::Show => {
+                    let mbox_path = default_vault_mailbox_path();
+                    let mbox = VaultMailbox::new_or_load(&mbox_path)?;
+                    let identicon = mbox.identity.identicon();
+                    println!("=======================================================");
+                    println!(" PROFILO SOVRANO LOCALE                                ");
+                    println!("=======================================================");
+                    println!("Username: {}", mbox.identity.username);
+                    println!("Box ID:   {}", mbox.identity.box_id_hex);
+                    println!("\nIdenticon Profilo (Avatar deterministico crittografico):");
+                    println!("{}", identicon.render_terminal());
+                    println!("=======================================================");
+                }
+
+                ProfileCommands::Add { username, recipient } => {
+                    let mbox_path = default_vault_mailbox_path();
+                    let mut mbox = VaultMailbox::new_or_load(&mbox_path)?;
+                    let profile = mbox.add_contact(&username, &recipient)?;
+                    mbox.save(&mbox_path)?;
+                    let identicon = profile.identicon();
+
+                    println!("=======================================================");
+                    println!(" PROFILO CONTATTO CREATO / AGGIORNATO                  ");
+                    println!("=======================================================");
+                    println!("Username:  {}", profile.username);
+                    println!("Recipient: {}", profile.box_id_hex);
+                    println!("\nIdenticon Profilo Destinatario:");
+                    println!("{}", identicon.render_terminal());
+                    println!("\n[✓] Salvato nella rubrica contatti del Vault!");
+                    println!("=======================================================");
+                }
+
+                ProfileCommands::List => {
+                    let mbox_path = default_vault_mailbox_path();
+                    let mbox = VaultMailbox::new_or_load(&mbox_path)?;
+                    println!("================================================================================");
+                    println!(" RUBRICA CONTATTI SOVRANI: {} PROFILI SALVATI", mbox.contacts.len());
+                    println!("================================================================================");
+                    if mbox.contacts.is_empty() {
+                        println!("[i] Nessun contatto in rubrica.");
+                        println!("    Aggiungine uno con: `katzen vault profile add --username <nome> --recipient <box-id>`");
+                    } else {
+                        for (i, c) in mbox.contacts.iter().enumerate() {
+                            let identicon = c.identicon();
+                            println!("#{} Contatto: {} (Box ID: {})", i + 1, c.username, c.box_id_hex);
+                            println!("{}", identicon.render_terminal());
+                        }
+                    }
+                    println!("================================================================================");
+                }
+
+                ProfileCommands::ExportSvg { username, recipient, output } => {
+                    let identicon = Identicon::new(&username, &recipient);
+                    let svg = identicon.render_svg(256);
+                    fs::write(&output, svg)?;
+                    println!("[✓] Identicon SVG esportato con successo in {:?}", output);
                 }
             },
             VaultCommands::Send {

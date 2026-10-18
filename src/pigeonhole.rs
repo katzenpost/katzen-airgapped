@@ -10,16 +10,22 @@ use x25519_dalek::{PublicKey as X25519PublicKey, StaticSecret as X25519StaticSec
 pub const BACAP_BOX_ID_SIZE: usize = 32;
 pub const BACAP_SIGNATURE_SIZE: usize = 64;
 
+fn default_username() -> String {
+    "sovereign-operator".to_string()
+}
+
 /// Sovereign Mailbox Keypair for Katzenpost Pigeonhole
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct BoxIdentity {
+    #[serde(default = "default_username")]
+    pub username: String,
     pub box_id_hex: String,
     pub privkey_hex: String,
     pub created_at: u64,
 }
 
 impl BoxIdentity {
-    pub fn generate() -> Self {
+    pub fn generate(username: &str) -> Self {
         let mut rng = OsRng;
         let mut seed = [0u8; 32];
         rng.fill_bytes(&mut seed);
@@ -36,10 +42,15 @@ impl BoxIdentity {
             .as_secs();
 
         Self {
+            username: if username.trim().is_empty() { default_username() } else { username.trim().to_string() },
             box_id_hex: hex::encode(box_id),
             privkey_hex: hex::encode(privkey),
             created_at: now,
         }
+    }
+
+    pub fn identicon(&self) -> crate::identicon::Identicon {
+        crate::identicon::Identicon::new(&self.username, &self.box_id_hex)
     }
 
     pub fn box_id(&self) -> Result<[u8; 32], String> {
@@ -323,8 +334,35 @@ pub enum MessageDirection {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ContactProfile {
+    pub username: String,
+    pub box_id_hex: String,
+    pub created_at: u64,
+}
+
+impl ContactProfile {
+    pub fn new(username: &str, box_id_hex: &str) -> Self {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        Self {
+            username: username.to_string(),
+            box_id_hex: box_id_hex.to_string(),
+            created_at: now,
+        }
+    }
+
+    pub fn identicon(&self) -> crate::identicon::Identicon {
+        crate::identicon::Identicon::new(&self.username, &self.box_id_hex)
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct VaultMailbox {
     pub identity: BoxIdentity,
+    #[serde(default)]
+    pub contacts: Vec<ContactProfile>,
     pub messages: Vec<MailboxMessage>,
 }
 
@@ -335,9 +373,10 @@ impl VaultMailbox {
             let mailbox: VaultMailbox = serde_json::from_str(&data).map_err(|e| format!("Invalid mailbox format: {}", e))?;
             Ok(mailbox)
         } else {
-            let identity = BoxIdentity::generate();
+            let identity = BoxIdentity::generate("sovereign-operator");
             let mailbox = Self {
                 identity,
+                contacts: Vec::new(),
                 messages: Vec::new(),
             };
             if let Some(parent) = storage_path.parent() {
@@ -346,6 +385,22 @@ impl VaultMailbox {
             mailbox.save(storage_path)?;
             Ok(mailbox)
         }
+    }
+
+    pub fn add_contact(&mut self, username: &str, box_id_hex: &str) -> Result<ContactProfile, String> {
+        let trimmed_hex = box_id_hex.trim();
+        let bytes = hex::decode(trimmed_hex).map_err(|e| format!("Hex non valido: {}", e))?;
+        if bytes.len() != 32 {
+            return Err("Il Box ID del contatto deve essere esattamente di 32 byte (64 caratteri hex)".to_string());
+        }
+        let profile = ContactProfile::new(username, trimmed_hex);
+        self.contacts.retain(|c| !c.box_id_hex.eq_ignore_ascii_case(trimmed_hex));
+        self.contacts.push(profile.clone());
+        Ok(profile)
+    }
+
+    pub fn find_contact(&self, box_id_hex: &str) -> Option<&ContactProfile> {
+        self.contacts.iter().find(|c| c.box_id_hex.eq_ignore_ascii_case(box_id_hex))
     }
 
     pub fn save(&self, storage_path: &Path) -> Result<(), String> {
@@ -440,8 +495,8 @@ mod tests {
 
     #[test]
     fn test_box_identity_and_encryption_roundtrip() {
-        let alice = BoxIdentity::generate();
-        let bob = BoxIdentity::generate();
+        let alice = BoxIdentity::generate("alice");
+        let bob = BoxIdentity::generate("bob");
 
         let message = b"Quantum Post-Quantum Secret for Katzenpost";
         let encrypted = alice.encrypt_for_box(&bob.box_id().unwrap(), message).unwrap();
@@ -452,8 +507,8 @@ mod tests {
 
     #[test]
     fn test_replica_write_encode_decode() {
-        let alice = BoxIdentity::generate();
-        let bob = BoxIdentity::generate();
+        let alice = BoxIdentity::generate("alice");
+        let bob = BoxIdentity::generate("bob");
 
         let write_msg = ReplicaWrite::new(&alice, bob.box_id().unwrap(), b"Test BACAP Deposit").unwrap();
         let encoded = write_msg.encode();
