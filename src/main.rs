@@ -1,7 +1,7 @@
 use clap::{Parser, Subcommand};
 use katzen_airgapped::identicon::Identicon;
 use katzen_airgapped::pigeonhole::{
-    default_vault_mailbox_path, BoxIdentity, ReplicaRead, ReplicaReadReply, ReplicaWrite, VaultMailbox,
+    default_vault_mailbox_path, MessageDirection, ReplicaRead, ReplicaReadReply, VaultMailbox,
 };
 use katzen_airgapped::sandbox::{apply_network_isolation, is_network_blocked, SandboxStatus};
 use katzen_airgapped::sphinx::{ConsensusTopology, SphinxEngine, SurbManager};

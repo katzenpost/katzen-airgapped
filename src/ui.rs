@@ -1,7 +1,6 @@
-use crate::pigeonhole::{default_vault_mailbox_path, BoxIdentity, MessageDirection, ReplicaWrite, VaultMailbox};
+use crate::pigeonhole::{default_vault_mailbox_path, VaultMailbox};
 use crate::virtual_keyboard::VirtualKeyboardState;
-use std::io::{self, stdout, Write};
-use std::path::PathBuf;
+use std::io::{self, Write};
 
 slint::slint! {
     import { Button, LineEdit, TextEdit, ScrollView, CheckBox } from "std-widgets.slint";
@@ -142,9 +141,9 @@ slint::slint! {
                 border_radius: 6px;
                 border_width: 1px;
                 border_color: #3182ce;
-                padding: 8px;
 
                 VerticalLayout {
+                    padding: 8px;
                     spacing: 6px;
 
                     Text {
@@ -211,9 +210,9 @@ slint::slint! {
             Rectangle {
                 background: #181b24;
                 border_radius: 6px;
-                padding: 6px;
 
                 HorizontalLayout {
+                    padding: 6px;
                     Text {
                         text: root.status_log;
                         color: #9ae6b4;
@@ -240,11 +239,11 @@ pub fn run_gui() -> Result<(), String> {
     }
 
     let mailbox_path = default_vault_mailbox_path();
-    let mut mailbox = VaultMailbox::new_or_load(&mailbox_path)
+    let mailbox = VaultMailbox::new_or_load(&mailbox_path)
         .map_err(|e| format!("Errore inizializzazione mailbox: {}", e))?;
 
     let main_window = MainWindow::new().map_err(|e| format!("Slint GUI init error: {}", e))?;
-    let mut kbd_state = VirtualKeyboardState::new();
+    let kbd_state = VirtualKeyboardState::new();
 
     let my_id = format!("Box ID: {}", mailbox.identity.box_id_hex);
     main_window.set_my_box_id(my_id.into());

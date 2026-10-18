@@ -110,9 +110,14 @@ mod tests {
     #[test]
     fn test_grouped_shuffling_preserves_categories() {
         let mut kbd = VirtualKeyboardState::new();
-        let orig_numbers = kbd.numbers.clone();
+        let mut orig_numbers = kbd.numbers.clone();
 
         kbd.shuffle_within_groups();
+
+        let mut shuffled = kbd.numbers.clone();
+        orig_numbers.sort();
+        shuffled.sort();
+        assert_eq!(orig_numbers, shuffled);
 
         // Check that all numbers are still digits
         for c in &kbd.numbers {
