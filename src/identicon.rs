@@ -224,6 +224,42 @@ impl Identicon {
         svg.push_str("</svg>");
         svg
     }
+
+    /// Render direct native Slint Image buffer with pixel-crisp nearest neighbor scaling
+    pub fn to_slint_image(&self, scale: u32) -> slint::Image {
+        let s = scale.max(1);
+        let size = 7 * s;
+        let mut buffer = slint::SharedPixelBuffer::<slint::Rgba8Pixel>::new(size, size);
+        let pixels = buffer.make_mut_slice();
+
+        let (pr, pg, pb) = self.primary_color;
+        let (sr, sg, sb) = self.secondary_color;
+        let (br, bg, bb) = self.bg_color;
+
+        let p_px = slint::Rgba8Pixel { r: pr, g: pg, b: pb, a: 255 };
+        let s_px = slint::Rgba8Pixel { r: sr, g: sg, b: sb, a: 255 };
+        let bg_px = slint::Rgba8Pixel { r: br, g: bg, b: bb, a: 255 };
+
+        for y in 0..size {
+            let row = y / s;
+            for x in 0..size {
+                let col = x / s;
+                let px = if row == 0 || row == 6 || col == 0 || col == 6 {
+                    bg_px
+                } else {
+                    let g_row = (row - 1) as usize;
+                    let g_col = (col - 1) as usize;
+                    match self.grid[g_row][g_col] {
+                        CellLayer::Primary => p_px,
+                        CellLayer::Secondary => s_px,
+                        CellLayer::Background => bg_px,
+                    }
+                };
+                pixels[(y * size + x) as usize] = px;
+            }
+        }
+        slint::Image::from_rgba8(buffer)
+    }
 }
 
 // Helper to extract bit n from 32-byte array (0-indexed, LSB first per byte)
