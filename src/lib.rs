@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+pub mod sandbox;
 pub mod sphinx;
 
 pub const MAGIC: [u8; 4] = *b"KPAG";

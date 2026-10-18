@@ -288,6 +288,7 @@ dependencies = [
  "chacha20",
  "clap",
  "hex",
+ "libc",
  "poly1305",
  "qrcode",
  "rand",
