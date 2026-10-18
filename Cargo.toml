@@ -17,6 +17,7 @@ x25519-dalek = { version = "2.0", features = ["static_secrets"] }
 chacha20 = "0.9"
 poly1305 = "0.8"
 libc = "0.2"
+slint = { version = "1.18.1", features = ["compat-1-2"] }
 
 [[bin]]
 name = "katzen"

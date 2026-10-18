@@ -1,7 +1,10 @@
 use std::collections::HashMap;
 
+pub mod pigeonhole;
 pub mod sandbox;
 pub mod sphinx;
+pub mod ui;
+pub mod virtual_keyboard;
 
 pub const MAGIC: [u8; 4] = *b"KPAG";
 pub const PROTOCOL_VERSION: u8 = 1;
@@ -15,6 +18,9 @@ pub enum MsgType {
     ReplyIn = 0x03,
     PkiConsensusUpdate = 0x04,
     HotStatus = 0x05,
+    PigeonholeDeposit = 0x06,
+    PigeonholePoll = 0x07,
+    PigeonholeReply = 0x08,
 }
 
 impl MsgType {
@@ -25,6 +31,9 @@ impl MsgType {
             0x03 => Ok(Self::ReplyIn),
             0x04 => Ok(Self::PkiConsensusUpdate),
             0x05 => Ok(Self::HotStatus),
+            0x06 => Ok(Self::PigeonholeDeposit),
+            0x07 => Ok(Self::PigeonholePoll),
+            0x08 => Ok(Self::PigeonholeReply),
             other => Err(format!("Unknown MsgType: 0x{:02x}", other)),
         }
     }

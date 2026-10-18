@@ -1,6 +1,11 @@
 use clap::{Parser, Subcommand};
+use katzen_airgapped::pigeonhole::{
+    default_vault_mailbox_path, BoxIdentity, ReplicaRead, ReplicaReadReply, ReplicaWrite, VaultMailbox,
+};
 use katzen_airgapped::sandbox::{apply_network_isolation, is_network_blocked, SandboxStatus};
 use katzen_airgapped::sphinx::{ConsensusTopology, SphinxEngine, SurbManager};
+use katzen_airgapped::ui::run_gui;
+use katzen_airgapped::virtual_keyboard::VirtualKeyboardState;
 use katzen_airgapped::{
     fragment_payload, render_qr_terminal, KpagChunk, MsgType, Reassembler, DEFAULT_CHUNK_SIZE,
 };
@@ -63,12 +68,21 @@ enum Commands {
         action: SpoolerCommands,
     },
 
+    /// Launch Sovereign Vault graphical user interface (Slint UI with grouped virtual keyboard)
+    Gui,
+
     /// Check system environment, kernel sandbox capabilities and removable media
     Status,
 }
 
 #[derive(Subcommand)]
 enum VaultCommands {
+    /// Sovereign Pigeonhole Mailbox: manage encrypted offline inbox, outbox, and BACAP drafts
+    Mailbox {
+        #[command(subcommand)]
+        action: MailboxCommands,
+    },
+
     /// Construct a 3-hop Sphinx packet offline (export to USB spool or display QR)
     Send {
         /// Message text to send through mixnet
@@ -127,6 +141,37 @@ enum VaultCommands {
 
     /// Inspect current offline PKI consensus directory topology
     ShowTopology,
+}
+
+#[derive(Subcommand)]
+enum MailboxCommands {
+    /// List all messages stored in local offline Vault mailbox
+    List,
+    /// Display sovereign Box ID address
+    Identity,
+    /// Deposit a new encrypted message to a recipient's Box ID
+    Deposit {
+        /// Recipient 32-byte hex Box ID
+        #[arg(short, long)]
+        recipient: Option<String>,
+        /// Plaintext message payload
+        #[arg(short, long)]
+        message: Option<String>,
+        /// Use grouped virtual keyboard (anti-keylogger, elevates Secrecy Score to 5 stars ⭐⭐⭐⭐⭐)
+        #[arg(long, default_value_t = false)]
+        virtual_keyboard: bool,
+    },
+    /// Generate a BACAP ReplicaRead query with SURB for anonymous mailbox polling
+    Poll,
+    /// Ingest and decrypt an inbound ReplicaReadReply envelope into the mailbox
+    Ingest {
+        /// Path to reply envelope file
+        #[arg(short, long)]
+        file: Option<PathBuf>,
+        /// Hex-encoded reply envelope
+        #[arg(short = 'x', long)]
+        hex: Option<String>,
+    },
 }
 
 #[derive(Subcommand)]
@@ -225,6 +270,29 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             );
             println!("=======================================================");
+
+            let mbox_path = default_vault_mailbox_path();
+            if let Ok(mbox) = VaultMailbox::new_or_load(&mbox_path) {
+                println!(" PIGEONHOLE ASYNC MAILBOX & QUANTUM STATE              ");
+                println!("=======================================================");
+                println!("[✓] Sovereign Box ID: {}", mbox.identity.box_id_hex);
+                println!("[i] Messaggi memorizzati nel Vault: {}", mbox.messages.len());
+                let unread = mbox.messages.iter().filter(|m| m.quantum_state.contains("Superposition")).count();
+                println!("[i] In sovrapposizione quantistica (non letti): {}", unread);
+                println!("=======================================================");
+            }
+
+            println!(" OPSEC SECRECY SCORE MODEL                            ");
+            println!("=======================================================");
+            println!("⭐ ⭐ ⭐      (70%) : Isolamento standard (Air-gap / Kernel namespace + Tastiera fisica)");
+            println!("⭐ ⭐ ⭐ ⭐ ⭐ (100%): Massima schermatura quantistica (Tastiera virtuale raggruppata anti-keylogger)");
+            println!("[i] Nota OPSEC: la tastiera virtuale raggruppata è opzionale, ma protegge da keylogger USB, coordinate mouse fisse e analisi acustica.");
+            println!("=======================================================");
+        }
+
+        Commands::Gui => {
+            println!("[*] Avvio interfaccia sovrana Katzen Vault...");
+            run_gui().map_err(|e| format!("Errore interfaccia: {}", e))?;
         }
 
         Commands::Standalone {
@@ -285,6 +353,154 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
 
         Commands::Vault { action } => match action {
+            VaultCommands::Mailbox { action } => match action {
+                MailboxCommands::List => {
+                    let mbox_path = default_vault_mailbox_path();
+                    let mbox = VaultMailbox::new_or_load(&mbox_path)?;
+                    println!("================================================================================");
+                    println!(" KATZENPOST VAULT MAILBOX: {} MESSAGGI REGISTRATI", mbox.messages.len());
+                    println!(" Identità Box ID: {}", mbox.identity.box_id_hex);
+                    println!("================================================================================");
+                    if mbox.messages.is_empty() {
+                        println!("[i] Nessun messaggio archiviato nella mailbox locale.");
+                        println!("    Usa `katzen vault mailbox deposit` o l'interfaccia grafica per comporne uno.");
+                    } else {
+                        for (idx, msg) in mbox.messages.iter().enumerate() {
+                            let dir_tag = match msg.direction {
+                                MessageDirection::Inbound => "INBOUND  [↓]",
+                                MessageDirection::Outbound => "OUTBOUND [↑]",
+                            };
+                            println!(
+                                "#{} | {} | {} | {} stelle ({})\n    Mittente/Dest: {} -> {}\n    Stato: {}\n    Anteprima: {}\n",
+                                idx + 1,
+                                dir_tag,
+                                msg.id,
+                                msg.secrecy_stars,
+                                msg.input_method,
+                                &msg.sender[0..12.min(msg.sender.len())],
+                                &msg.recipient[0..12.min(msg.recipient.len())],
+                                msg.quantum_state,
+                                if msg.plaintext.len() > 60 { format!("{}...", &msg.plaintext[0..60]) } else { msg.plaintext.clone() }
+                            );
+                        }
+                    }
+                }
+
+                MailboxCommands::Identity => {
+                    let mbox_path = default_vault_mailbox_path();
+                    let mbox = VaultMailbox::new_or_load(&mbox_path)?;
+                    println!("=======================================================");
+                    println!(" KATZENPOST PIGEONHOLE SOVEREIGN IDENTITY              ");
+                    println!("=======================================================");
+                    println!("Box ID (Indirizzo Pubblico): {}", mbox.identity.box_id_hex);
+                    println!("Creato il (Unix Epoch):      {}", mbox.identity.created_at);
+                    println!("File Archivio Locale:        {}", mbox_path.display());
+                    println!("Suggerimento: Condividi il tuo Box ID con i tuoi contatti per ricevere messaggi asincroni.");
+                    println!("=======================================================");
+                }
+
+                MailboxCommands::Deposit { recipient, message, virtual_keyboard } => {
+                    let mbox_path = default_vault_mailbox_path();
+                    let mut mbox = VaultMailbox::new_or_load(&mbox_path)?;
+                    let mut kbd = VirtualKeyboardState::new();
+
+                    let recip_hex = recipient.unwrap_or_else(|| {
+                        print!("Inserisci il Box ID (32-byte hex) del destinatario: ");
+                        io::stdout().flush().unwrap();
+                        let mut input = String::new();
+                        io::stdin().read_line(&mut input).unwrap();
+                        input.trim().to_string()
+                    });
+
+                    let use_virtual = if virtual_keyboard {
+                        true
+                    } else {
+                        println!("La tastiera virtuale raggruppata aumenta il tuo score di segretezza da 3 a 5 stelle ⭐⭐⭐⭐⭐.");
+                        print!("Vuoi utilizzarla per comporre il messaggio? [s/N]: ");
+                        io::stdout().flush().unwrap();
+                        let mut ans = String::new();
+                        io::stdin().read_line(&mut ans).unwrap();
+                        ans.trim().eq_ignore_ascii_case("s") || ans.trim().eq_ignore_ascii_case("y")
+                    };
+
+                    let (score, method) = if use_virtual {
+                        kbd.is_enabled = true;
+                        kbd.used_for_composition = true;
+                        let boosted = kbd.compute_secrecy_score();
+                        println!("\n[OK] Tastiera virtuale anti-keylogger attivata!");
+                        println!("Disposizione raggruppata per facilità d'uso (rimescolata solo all'interno di ciascun gruppo):");
+                        println!(" [NUMERI]  : {:?}", kbd.numbers);
+                        println!(" [LETTERE] : {:?}", kbd.letters);
+                        println!(" [SIMBOLI] : {:?}", kbd.symbols);
+                        (boosted.stars, "Virtual Keyboard (Grouped Anti-Keylogger)")
+                    } else {
+                        let std_score = kbd.compute_secrecy_score();
+                        (std_score.stars, "Physical Keyboard")
+                    };
+
+                    let body_text = message.unwrap_or_else(|| {
+                        print!("\nInserisci il testo del messaggio: ");
+                        io::stdout().flush().unwrap();
+                        let mut input = String::new();
+                        io::stdin().read_line(&mut input).unwrap();
+                        input.trim().to_string()
+                    });
+
+                    println!("\n[*] Cifratura asimmetrica Pigeonhole e firma BLAKE3...");
+                    let write_msg = mbox.deposit_draft(&recip_hex, &body_text, score, method)?;
+                    mbox.save(&mbox_path)?;
+
+                    println!("[✓] Messaggio cifrato e salvato nella mailbox locale!");
+                    println!("    ID Payload cifrato: {} byte", write_msg.payload.len());
+                    println!("    Punteggio Segretezza: {} stelle ({})", score, method);
+                    println!("    Stato Quantistico: Superposizione (Scatola di Schrödinger chiusa)");
+                    println!("    Pronto per esportazione su spool USB o proiezione QR.");
+                }
+
+                MailboxCommands::Poll => {
+                    let mbox_path = default_vault_mailbox_path();
+                    let mbox = VaultMailbox::new_or_load(&mbox_path)?;
+                    let box_id_bytes = mbox.identity.box_id()?;
+                    let read_query = ReplicaRead::new(box_id_bytes);
+                    let wire = read_query.encode();
+
+                    println!("=======================================================");
+                    println!(" KATZENPOST PIGEONHOLE: INTERROGAZIONE ASINCRONA       ");
+                    println!("=======================================================");
+                    println!("Box ID interrogato: {}", mbox.identity.box_id_hex);
+                    println!("Dimensione query ReplicaRead: {} byte", wire.len());
+                    println!("Istruzioni: Il blind spooler invierà questa richiesta alla replica Pigeonhole");
+                    println!("            utilizzando un SURB delegato per ricevere le risposte senza tracciamento.");
+                    println!("=======================================================");
+                }
+
+                MailboxCommands::Ingest { file, hex } => {
+                    let mbox_path = default_vault_mailbox_path();
+                    let mut mbox = VaultMailbox::new_or_load(&mbox_path)?;
+
+                    let raw_bytes = if let Some(path) = file {
+                        fs::read(path)?
+                    } else if let Some(hex_str) = hex {
+                        hex::decode(hex_str)?
+                    } else {
+                        eprintln!("Specificare --file oppure --hex per l'ingestione della risposta.");
+                        std::process::exit(1);
+                    };
+
+                    let reply = ReplicaReadReply::decode(&raw_bytes)?;
+                    let plaintext = mbox.ingest_reply(&reply)?;
+                    mbox.save(&mbox_path)?;
+
+                    println!("=======================================================");
+                    println!(" KATZENPOST VAULT: DECOERENZA QUANTISTICA E LETTURA    ");
+                    println!("=======================================================");
+                    println!("[✓] Busta Pigeonhole decifrata e verificata con successo!");
+                    println!("[*] Stato: Decoerenza quantistica (Testo osservato)");
+                    println!("[*] Testo decifrato:");
+                    println!("{}", plaintext);
+                    println!("=======================================================");
+                }
+            },
             VaultCommands::Send {
                 message,
                 file,

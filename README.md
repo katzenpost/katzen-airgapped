@@ -36,11 +36,44 @@
 
 ---
 
-## 2. Command Line Interface
-
-### Check Environment & Sandbox Status
+### Check Environment, Sandbox & Secrecy Score Model
 ```bash
 katzen status
+```
+
+### Sovereign GUI (Native Slint Desktop Interface)
+Launch the graphical interface with built-in Schrödinger quantum state monitor and optional grouped virtual keyboard:
+```bash
+katzen gui
+```
+*(If run on a system without an active X11 or Wayland display, `katzen` automatically transitions to the interactive terminal TUI fallback).*
+
+### Anti-Keylogger Virtual Keyboard & Secrecy Score Model
+The virtual keyboard is **optional**, designed to defend high-risk workstations against hardware USB keyloggers, screen/coordinate sniffers, and acoustic cryptanalysis:
+- **Partitioned Layout**: Keys are segregated strictly into distinct groups (**Numbers**, **Letters**, and **Symbols**).
+- **Intra-Group Shuffling**: Digits scramble only among digits; letters scramble only among letters; symbols scramble only among symbols. This preserves human ergonomic scanning while randomizing click/pointer coordinates.
+- **Dynamic Secrecy Score**:
+  - **Standard Mode (Physical Keyboard)**: `3/5 ⭐⭐⭐ (70%)` — Kernel namespace or physical air-gap active.
+  - **Quantum Shielding (Virtual Keyboard)**: `5/5 ⭐⭐⭐⭐⭐ (100%)` — Full isolation from keyboard sniffing vectors.
+  - **Calm, Non-Alarmist UI**: Zero panic banners or flashing red lights; clear, actionable OPSEC guidance only.
+
+### Sovereign Pigeonhole Mailbox (Katzenpost BACAP)
+Manage asynchronous mailboxes offline:
+```bash
+# Display your local sovereign Box ID identity:
+katzen vault mailbox identity
+
+# Compose a message draft (with optional anti-keylogger virtual keyboard):
+katzen vault mailbox deposit --recipient <32-byte-hex-box-id> --virtual-keyboard
+
+# List stored inbound and outbound messages:
+katzen vault mailbox list
+
+# Generate an anonymous SURB poll query for the Pigeonhole mailbox service:
+katzen vault mailbox poll
+
+# Ingest and decrypt an inbound reply envelope:
+katzen vault mailbox ingest --file /media/usb/spool/inbox/reply.inbound
 ```
 
 ### Standalone Everyday Mode
@@ -83,6 +116,7 @@ katzen vault receive --spool-dir /media/usb/spool
 
 * **Packet Geometry**: Fixed-size 1024-byte Sphinx onion packets (ChaCha20, BLAKE3 keyed-MAC, X25519/PQ ML-KEM).
 * **Return Path**: Single-Use Reply Blocks (SURBs) ensuring blind, uncorrelated responses.
+* **Asynchronous Mailbox**: Katzenpost BACAP (Box Access Capability) with 32-byte Box IDs and 64-byte BLAKE3 signatures.
 * **Integrity**: BLAKE3 checksums guarding every `KPAG` frame.
 * **Memory Safety**: 100% pure Rust, zero-cost abstractions, zero external C daemon dependencies.
 
