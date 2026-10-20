@@ -10,6 +10,37 @@ use x25519_dalek::{PublicKey as X25519PublicKey, StaticSecret as X25519StaticSec
 pub const BACAP_BOX_ID_SIZE: usize = 32;
 pub const BACAP_SIGNATURE_SIZE: usize = 64;
 
+// --- Katzenpost Pigeonhole & katzenqt1 Wire Invariants ---
+pub const KEY_SIZE: usize = 32;
+pub const INDEX_SIZE: usize = 104;
+pub const READ_CAP_SIZE: usize = 136;
+pub const HASH_SIZE: usize = 32;
+pub const PREFIX_SIZE: usize = 8;
+pub const ROSTER_MAX: usize = 256;
+
+pub const KATZENQT1_VERSION: u64 = 3;
+pub const MSG_TEXT: u64 = 0;
+pub const MSG_INTRODUCTION: u64 = 1;
+pub const MSG_FILE_UPLOAD: u64 = 2;
+pub const MSG_WHO: u64 = 3;
+pub const MSG_REPLY_WHO: u64 = 4;
+pub const MSG_CONTROL: u64 = 10;
+
+/// A member's identity: the public key its read cap begins with.
+pub fn key_of(read_cap: &[u8]) -> &[u8] {
+    &read_cap[..KEY_SIZE.min(read_cap.len())]
+}
+
+/// A member's prefix: the first 8 bytes of its public key.
+pub fn prefix_of(key: &[u8]) -> &[u8] {
+    &key[..PREFIX_SIZE.min(key.len())]
+}
+
+/// The index a read cap starts at.
+pub fn start_of(read_cap: &[u8]) -> &[u8] {
+    &read_cap[KEY_SIZE.min(read_cap.len())..]
+}
+
 fn default_username() -> String {
     "sovereign-operator".to_string()
 }
@@ -499,5 +530,19 @@ mod tests {
         assert_eq!(decoded.box_id, write_msg.box_id);
         assert_eq!(decoded.signature, write_msg.signature);
         assert_eq!(decoded.payload, write_msg.payload);
+    }
+
+    #[test]
+    fn test_katzenqt1_wire_invariants() {
+        assert_eq!(KEY_SIZE, 32);
+        assert_eq!(READ_CAP_SIZE, 136);
+        assert_eq!(PREFIX_SIZE, 8);
+        assert_eq!(KEY_SIZE + INDEX_SIZE, READ_CAP_SIZE);
+
+        let mut dummy_read_cap = vec![0x42u8; READ_CAP_SIZE];
+        dummy_read_cap[0..8].copy_from_slice(b"12345678");
+        assert_eq!(key_of(&dummy_read_cap).len(), 32);
+        assert_eq!(prefix_of(key_of(&dummy_read_cap)), b"12345678");
+        assert_eq!(start_of(&dummy_read_cap).len(), INDEX_SIZE);
     }
 }
