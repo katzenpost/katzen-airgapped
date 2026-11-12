@@ -1,32 +1,51 @@
 # katzen-airgapped
 
-Experimental Rust client for studying a split offline/online Katzenpost workflow. The cold and hot commands support local QR framing and packet reassembly tests. They do **not** yet provide a working end-to-end mixnet delivery path.
+An experimental Rust client for researchers studying a split cold/hot workflow for [Katzenpost](https://github.com/katzenpost): an offline "cold" machine composes and encrypts messages and shows them as QR frames, and an online "hot" machine scans the frames and hands them to `kpclientd`.
 
-The current repository review and release blockers are in [docs/REVIEW_2026-10-30.md](docs/REVIEW_2026-10-30.md). This project does not implement a P2P network.
+This is a research prototype, not a messaging client. It exercises QR framing and reassembly, an encrypted local mailbox and a kernel network sandbox. The cold side builds packets in a custom 1024-byte format, not Katzenpost Sphinx; `kpclientd` carries such a packet to the courier service as an opaque payload, which the courier does not understand. To send messages, use a Katzenpost client such as [katzenqt](https://github.com/katzenpost/katzenqt). The open problems are listed in [docs/REVIEW_2026-10-30.md](docs/REVIEW_2026-10-30.md).
 
-## Current security boundary
+![katzen GUI](katzen-airgapped-gui.png)
 
-- The local mailbox is encrypted with XChaCha20-Poly1305. A passphrase entered in a terminal derives the key with Argon2id (64 MiB, three passes). The passphrase is requested once per process. Keep a separate, protected backup and retain the passphrase: there is no recovery mechanism.
-- The first successful unlock of a legacy JSON mailbox migrates it to the encrypted `KAV1` format using an atomic replacement. A failed unlock leaves the legacy file intact. Old backups, filesystem snapshots, swap, and existing `spool/inbox/*.inbound` files may still contain plaintext; this program does not remove them.
-- The local demonstration box envelope uses ephemeral X25519 and XChaCha20-Poly1305 (`KPB2`), authenticating the envelope version, ephemeral public key, recipient ID, nonce, and ciphertext. Old unauthenticated envelopes are rejected. The demonstration BLAKE3 tag is **not** a verifiable asymmetric signature and is not a BACAP wire signature.
-- `--sandbox` fails if the kernel cannot enforce network isolation. A failed connectivity probe is not evidence of an air gap. Physical isolation must be established by the operator and checked independently.
-- `katzen-hot` implements live mixnet dispatch via `kpclientd` thin-client CBOR wire contract, verifying epoch, service endpoint, and forward/return routes with delivery receipt logging (`receipt_<seq>.json`). If the local daemon is offline or unreachable, outbound packets are durably spooled to `outbox/` for deferred dispatch.
-- Authentic Katzenpost PKI consensus documents are decoded via `ConsensusTopology::from_pki_document`, extracting verified mix nodes, layers, addresses, and epoch Sphinx keys.
-- The Slint desktop GUI provides a native in-window passphrase unlock and vault initialization flow with an on-screen anti-keylogger virtual keyboard and inline error reporting, removing any dependency on terminal `rpassword` prompts.
+## Quick start
 
-## Local checks
+Requires a stable Rust toolchain; the Slint GUI needs the usual Linux desktop libraries (fontconfig, X11 or Wayland).
+
+```bash
+cargo build --locked
+export KATZEN_HOME=$(mktemp -d)   # keep test state out of the repository
+target/debug/katzen status
+target/debug/katzen-cold send --message test --raw --loops 1 \
+  | grep -o 'kpag://.*' \
+  | target/debug/katzen-hot ingest --spool-dir "$KATZEN_HOME/hot"
+```
+
+The last command runs both sides on one machine: `katzen-cold` prints the QR frames as text and `katzen-hot` reassembles them. If a `kpclientd` is reachable (it also tries the abstract socket `@katzenpost`), the packet is sent and a receipt is written to `$KATZEN_HOME/hot/sent/`. Otherwise the packet is saved to `$KATZEN_HOME/hot/outbox/`; prefix the `katzen-hot` command with `unshare -rn` to force this offline path. `target/debug/katzen gui` opens the desktop interface.
+
+## Binaries and modules
+
+| Path | Purpose |
+|---|---|
+| [`src/main.rs`](src/main.rs) | `katzen`: unified CLI (`vault`, `spooler`, `receive`, `gui`, `status`) |
+| [`src/cold_main.rs`](src/cold_main.rs) | `katzen-cold`: offline side; builds packets and shows QR frames |
+| [`src/hot_main.rs`](src/hot_main.rs) | `katzen-hot`: online side; reads QR frames and forwards or spools them |
+| [`src/lib.rs`](src/lib.rs) | `KPAG` QR chunk framing and reassembly |
+| [`src/pigeonhole.rs`](src/pigeonhole.rs) | Encrypted mailbox (`KAV1`) and demonstration box envelope (`KPB2`) |
+| [`src/sphinx.rs`](src/sphinx.rs) | Custom packet format and PKI consensus decoding |
+| [`src/thinclient.rs`](src/thinclient.rs) | CBOR codec and `kpclientd` thin-client connection |
+| [`src/sandbox.rs`](src/sandbox.rs) | Network isolation with Linux namespaces (`--sandbox`) |
+| [`src/ui.rs`](src/ui.rs), [`src/virtual_keyboard.rs`](src/virtual_keyboard.rs), [`src/identicon.rs`](src/identicon.rs) | Slint GUI, on-screen keyboard, key identicons |
+| [`config/client.toml`](config/client.toml) | `kpclientd` configuration used when a bundled daemon is present |
+
+Storage, envelope, cold-to-hot path and sandbox details are in [docs/DESIGN.md](docs/DESIGN.md).
+
+## Status and security boundary
+
+Version 0.1.0. The mailbox is encrypted with XChaCha20-Poly1305 under an Argon2id key from a passphrase; there is no recovery. The `KPB2` envelope's BLAKE3 tag is not a verifiable signature. PKI documents are decoded without signature verification. `--sandbox` fails if the kernel cannot isolate the network; it does not prove an air gap. Treat every QR or removable-media import as untrusted input. No two-device test and no end-to-end send and reply test has passed. The test gates are in [docs/SECURITY_TEST_PLAN.md](docs/SECURITY_TEST_PLAN.md).
+
+## Testing and contributing
 
 ```bash
 cargo test --locked
-katzen status
-katzen-cold send --message test --raw
 ```
 
-The QR path can be tested on one machine with synthetic data. A two-device test should use a dedicated offline laptop for the cold side, with radios and Ethernet disabled, and an online machine for the hot side. Treat every QR or removable-media import as untrusted input. Android airplane mode is useful for interface experiments but is not the reference air-gap configuration because Wi-Fi and Bluetooth can remain enabled.
-
-## Verification & Live Delivery Architecture
-
-1. **PKI Consensus Validation**: The cold vault and client topology decoder parses Katzenpost CBOR consensus documents, extracting epoch, verified layer assignments (1..=3), and Sphinx public keys.
-2. **Wire Contract Dispatch**: `katzen-hot` reassembles air-gap chunks (`KPAG`), binds to `kpclientd` via Unix domain or abstract socket (`@katzenpost`), submits thin-client CBOR frames, and verifies `MessageSentEvent` delivery receipts.
-3. **Durable Deferred Spooling**: When network connectivity or local mixnet daemons are unavailable, packets are saved with private permissions (`0o600`) to `spool/outbox/` for queueing.
-4. **Native GUI Unlock Flow**: Slint desktop interface features in-window Argon2id decryption, password masking, on-screen key scrambling, and non-blocking initialization.
+Unit tests cover local invariants only. Issues and pull requests are welcome on GitHub. The repository has no licence file yet.
